@@ -18,33 +18,33 @@
 module fmlarb #(
     parameter fml_depth = 25
 ) (
-    input sys_clk,
-    input sys_rst,
+    input                       sys_clk,
+    input                       sys_rst,
 
     /* Interface 0 has higher priority than the others */
-    input [fml_depth-1:0] m0_adr,
-    input m0_stb,
-    input m0_we,
-    output m0_ack,
-    input [1:0] m0_sel,
-    input [15:0] m0_di,
-    output [15:0] m0_do,
+    input       [fml_depth-1:0] m0_adr,
+    input                       m0_stb,
+    input                       m0_we,
+    output                      m0_ack,
+    input       [ 1: 0]         m0_sel,
+    input       [15: 0]         m0_di,
+    output      [15: 0]         m0_do,
 
-    input [fml_depth-1:0] m1_adr,
-    input m1_stb,
-    input m1_we,
-    output m1_ack,
-    input [1:0] m1_sel,
-    input [15:0] m1_di,
-    output [15:0] m1_do,
+    input       [fml_depth-1:0] m1_adr,
+    input                       m1_stb,
+    input                       m1_we,
+    output                      m1_ack,
+    input       [ 1: 0]         m1_sel,
+    input       [15: 0]         m1_di,
+    output      [15: 0]         m1_do,
 
-    output reg [fml_depth-1:0] s_adr,
-    output reg s_stb,
-    output reg s_we,
-    input s_ack,
-    output reg [1:0] s_sel,
-    input [15:0] s_di,
-    output reg [15:0] s_do
+    output reg  [fml_depth-1:0] s_adr,
+    output reg                  s_stb,
+    output reg                  s_we,
+    input                       s_ack,
+    output reg  [ 1: 0]         s_sel,
+    input       [15: 0]         s_di,
+    output reg  [15: 0]         s_do
 );
 
 assign m0_do = s_di;
@@ -100,17 +100,17 @@ end
 wire write_burst_start = s_we & s_ack;
 
 reg wmaster;
-reg [1:0] burst_counter;
+reg [2:0] burst_counter;
 
 always @(posedge sys_clk) begin
     if(sys_rst) begin
         wmaster <= 1'd0;
-        burst_counter <= 2'd0;
+        burst_counter <= 3'd0;
     end else begin
         if(|burst_counter)
-            burst_counter <= burst_counter - 2'd1;
+            burst_counter <= burst_counter - 3'd1;
         if(write_burst_start)
-            burst_counter <= 2'd2;
+            burst_counter <= 3'd6;
         if(~write_burst_start & ~(|burst_counter))
             wmaster <= next_master;
     end
