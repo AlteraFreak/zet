@@ -19,22 +19,22 @@
 
 module kotku (
     input        clk_50_,           //
-    output [9:0] ledr_,
-    output [7:0] ledg_,
+//    output [9:0] ledr_,
+//    output [7:0] ledg_,
 //    input  [9:0] sw_,
-    input  [3:0] key_,
-    output [6:0] hex0_,
-    output [6:0] hex1_,
-    output [6:0] hex2_,
-    output [6:0] hex3_,
+//    input  [3:0] key_,
+//    output [6:0] hex0_,
+//    output [6:0] hex1_,
+//    output [6:0] hex2_,
+//    output [6:0] hex3_,
 
     // flash signals
-    output [22:0] flash_addr_,      //
+    output [22:1] flash_addr_,      //
     input  [15:0] flash_data_,      // change 8 bit to 16bit !!!
     output        flash_we_n_,      //
     output        flash_oe_n_,      //
     output        flash_ce_n_,      //
-    output        flash_rst_n_,
+//    output        flash_rst_n_,
 
     output          FLASH_nWP,
     input           FLASH_STATUS,
@@ -82,13 +82,9 @@ module kotku (
 
 // AlterFreak Hacks for Custom PCB
 
-//wire            FLASH_nWP;
 assign          FLASH_nWP = 1'b0;
-//wire            FLASH_nBYTE;
 assign          FLASH_nBYTE = 1'b1;
-//wire    [ 1: 0] SRAM_BE;
 assign          SRAM_BE = 2'b00;
-//wire            SRAM_nCS;
 assign          SRAM_nCS = 1'b1;
 // save the desing from rebooting
 assign          BOOT_USER = 1'b0;
@@ -142,6 +138,17 @@ assign sw_ = 10'd0;
   wire        vga_cyc_i;
   wire        vga_stb_i;
   wire        vga_ack_o;
+
+  // cross clock domain synchronized signals
+  wire [15:0] vga_dat_o_s;
+  wire [15:0] vga_dat_i_s;
+  wire        vga_tga_i_s;
+  wire [19:1] vga_adr_i_s;
+  wire [ 1:0] vga_sel_i_s;
+  wire        vga_we_i_s;
+  wire        vga_cyc_i_s;
+  wire        vga_stb_i_s;
+  wire        vga_ack_o_s;
 
   // wires to uart controller
   wire [15:0] uart_dat_o;
@@ -235,6 +242,16 @@ assign sw_ = 10'd0;
   wire        csrbrg_we;
   wire        csrbrg_ack;
 
+  wire [19:1] vgabrg_adr;
+  wire [15:0] vgabrg_dat_w;
+  wire [15:0] vgabrg_dat_r;
+  wire [ 1:0] vgabrg_sel;
+  wire        vgabrg_tga;
+  wire        vgabrg_stb;
+  wire        vgabrg_cyc;
+  wire        vgabrg_we;
+  wire        vgabrg_ack;
+
   wire [ 2:0] csr_a;
   wire        csr_we;
   wire [15:0] csr_dw;
@@ -258,11 +275,13 @@ assign sw_ = 10'd0;
 
   wire [24:0] fml_vga_adr;
   wire        fml_vga_stb;
-  wire        fml_vga_we;
   wire        fml_vga_ack;
-  wire [ 1:0] fml_vga_sel;
-  wire [15:0] fml_vga_di;
   wire [15:0] fml_vga_do;
+
+  wire        dcb_vga_stb;
+  wire [24:0] dcb_vga_adr;
+  wire [15:0] dcb_vga_dat;
+  wire        dcb_vga_hit;
 
   // wires to default stb/ack
   wire def_cyc_i;
@@ -272,8 +291,8 @@ assign sw_ = 10'd0;
 
   wire        sdram_clk;
 
-//  wire        vga_clk;
-//
+  wire        vga_clk;
+
   wire [ 7:0] intv;
   wire [ 2:0] iid;
   wire        intr;
@@ -312,9 +331,9 @@ assign sw_ = 10'd0;
   assign rst = !rst_lck;
 `endif
 
-reg     [26: 0] debug_reset_cnt;
+reg     [28: 0] debug_reset_cnt;
 always @ ( posedge clk )
-  debug_reset_cnt <= debug_reset_cnt + 27'd1;
+  debug_reset_cnt <= debug_reset_cnt + 29'd1;
 
 reg     [15: 0] debug_reset_delay_cnt;
 always @ ( posedge clk )
@@ -344,12 +363,12 @@ always @ ( posedge clk )
     .wb_ack_o (fl_ack_o),
 
     // Pad signals
-    .flash_addr_  (flash_addr_[22:1]),
+    .flash_addr_  (flash_addr_),
     .flash_data_  (flash_data_),
     .flash_we_n_  (flash_we_n_),
     .flash_oe_n_  (flash_oe_n_),
     .flash_ce_n_  (flash_ce_n_),
-    .flash_rst_n_ (flash_rst_n_)
+    .flash_rst_n_ ()
   );
 
   wb_abrgr wb_fmlbrg (
@@ -384,9 +403,9 @@ always @ ( posedge clk )
     .fml_depth   (25),
 //    .cache_depth (9)   //   512 byte cache D=2  T=1
 //    .cache_depth (10)  //  1024 byte cache D=2  T=1
-//    .cache_depth (11)  //  2048 byte cache D=4  T=1
+    .cache_depth (11)  //  2048 byte cache D=4  T=1
 //    .cache_depth (12)  //  4096 byte cache D=8  T=1
-    .cache_depth (13)  //  8192 byte cache D=16 T=1
+//    .cache_depth (13)  //  8192 byte cache D=16 T=1
     ) fmlbrg (
     .sys_clk  (sdram_clk),
     .sys_rst  (rst),
@@ -402,6 +421,15 @@ always @ ( posedge clk )
     .wb_we_i  (fmlbrg_we),
     .wb_ack_o (fmlbrg_ack),
 
+//    // FML master interface
+//    .fml_adr (fml_adr),
+//    .fml_stb (fml_stb),
+//    .fml_we  (fml_we),
+//    .fml_ack (fml_ack),
+//    .fml_sel (fml_sel),
+//    .fml_do  (fml_do),
+//    .fml_di  (fml_di)
+
     // FML master interface
     .fml_adr (fml_zet_adr),
     .fml_stb (fml_zet_stb),
@@ -411,25 +439,43 @@ always @ ( posedge clk )
     .fml_do  (fml_zet_di),
     .fml_di  (fml_zet_do),
 
-    .dcb_stb ( 1'b0 ),
-    .dcb_adr ( fml_vga_adr ),
-    .dcb_dat ( ),
-    .dcb_hit ( )
+//    .dcb_stb ( 1'b0 ),//dcb_vga_stb ),
+//    .dcb_adr ( dcb_vga_adr ),
+//    .dcb_dat ( dcb_vga_dat ),
+//    .dcb_hit ( dcb_vga_hit )
   );
 
- fmlarb #(
+reg [7:0] fml_zet_ack_piped = 8'd0;
+always @ ( posedge sdram_clk )
+    if ( rst )
+        fml_zet_ack_piped <= 8'd0;
+    else
+        fml_zet_ack_piped <= { fml_zet_ack_piped[6:0] , fml_zet_ack };
+
+reg fml_dummyport0_stb = 1'b0;
+always @ ( posedge sdram_clk )
+    if ( rst )
+        fml_dummyport0_stb <= 1'b0;
+    else if ( fml_dummyport0_stb )
+       fml_dummyport0_stb <= ~fml_vga_ack;
+    else
+       fml_dummyport0_stb <= fml_zet_stb;
+//       fml_dummyport0_stb <= fml_zet_ack_piped[3] ;
+
+fmlarb #(
     .fml_depth ( 25 )
 ) fmlarb (
     .sys_clk  ( sdram_clk ),
     .sys_rst  ( rst ),
 
     /* Interface 0 has higher priority than the others */
-    .m0_adr   ( 25'd0 ),//fml_vga_adr ), // input [fml_depth-1:0]
-    .m0_stb   ( 1'b0 ),//fml_vga_stb ), // input
-    .m0_we    ( 1'b0 ),//fml_vga_we  ), // input
+    .m0_adr   ( fml_vga_adr ), // input [fml_depth-1:0]
+    .m0_stb   ( fml_dummyport0_stb ),//1'b0 ),//fml_vga_stb ), // input
+//    .m0_stb   ( 1'b0 ),//fml_vga_stb ), // input
+    .m0_we    ( 1'b0 ),        // vga never writes
     .m0_ack   ( fml_vga_ack ), // output
-    .m0_sel   ( 2'd0 ),//fml_vga_sel ), // input [1:0]
-    .m0_di    ( 16'd0 ),//fml_vga_di  ), // input [15:0]
+    .m0_sel   ( 2'b11       ), // input [1:0]
+    .m0_di    ( 16'd0       ), //
     .m0_do    ( fml_vga_do  ), // output [15:0]
 
     .m1_adr   ( fml_zet_adr ), // input [fml_depth-1:0]
@@ -444,7 +490,7 @@ always @ ( posedge clk )
     .s_stb    ( fml_stb ), // output reg
     .s_we     ( fml_we  ), // output reg
     .s_ack    ( fml_ack ), // input
-    .s_sel    ( fml_sel ), // output reg [1:0] 
+    .s_sel    ( fml_sel ), // output reg [1:0]
     .s_di     ( fml_di  ), // input [15:0]
     .s_do     ( fml_do  )  // output reg [15:0]
 );
@@ -493,6 +539,8 @@ always @ ( posedge clk )
     .csr_di (csr_dr_hpdmc)
   );
 
+wire sdram_initialized;
+
   hpdmc #(
     .csr_addr          (1'b0),
     .sdram_depth       (25),
@@ -500,6 +548,7 @@ always @ ( posedge clk )
     ) hpdmc (
     .sys_clk (sdram_clk),
     .sys_rst (rst),
+    .sdram_initialized ( sdram_initialized ),
 
     // CSR slave interface
     .csr_a  (csr_a),
@@ -528,11 +577,38 @@ always @ ( posedge clk )
     .sdram_dq    (sdram_data_)
   );
 
-  vga vga (
+wb_abrg vga_brg (
+    .sys_rst (rst),
+
     // Wishbone slave interface
-    .wb_rst_i (rst),
-//    .wb_clk_i (vga_clk),   // 25MHz VGA clock
-    .wb_clk_i (clk),   // 25MHz VGA clock
+    .wbs_clk_i (clk),
+    .wbs_adr_i (vga_adr_i_s),
+    .wbs_dat_i (vga_dat_i_s),
+    .wbs_dat_o (vga_dat_o_s),
+    .wbs_sel_i (vga_sel_i_s),
+    .wbs_tga_i (vga_tga_i_s),
+    .wbs_stb_i (vga_stb_i_s),
+    .wbs_cyc_i (vga_cyc_i_s),
+    .wbs_we_i  (vga_we_i_s),
+    .wbs_ack_o (vga_ack_o_s),
+
+    // Wishbone master interface
+    .wbm_clk_i (vga_clk),
+    .wbm_adr_o (vga_adr_i),
+    .wbm_dat_o (vga_dat_i),
+    .wbm_dat_i (vga_dat_o),
+    .wbm_sel_o (vga_sel_i),
+    .wbm_tga_o (vga_tga_i),
+    .wbm_stb_o (vga_stb_i),
+    .wbm_cyc_o (vga_cyc_i),
+    .wbm_we_o  (vga_we_i),
+    .wbm_ack_i (vga_ack_o)
+  );
+
+vga vga (
+    // Wishbone slave interface
+    .wb_rst_i (rst | ~sdram_initialized),
+    .wb_clk_i (vga_clk),   // 25MHz VGA clock
     .wb_dat_i (vga_dat_i),
     .wb_dat_o (vga_dat_o),
     .wb_adr_i (vga_adr_i[16:1]),    // 128K
@@ -578,10 +654,14 @@ always @ ( posedge clk )
   );
 
  ps2keyb #(
-    .TIMER_60USEC_VALUE_PP (1500),
-    .TIMER_60USEC_BITS_PP  (11),
-    .TIMER_5USEC_VALUE_PP  (125),
-    .TIMER_5USEC_BITS_PP   (7)
+    .TIMER_60USEC_VALUE_PP (750),
+    .TIMER_60USEC_BITS_PP  (10),
+    .TIMER_5USEC_VALUE_PP  (60),
+    .TIMER_5USEC_BITS_PP   (6)
+//    .TIMER_60USEC_VALUE_PP (1500),
+//    .TIMER_60USEC_BITS_PP  (11),
+//    .TIMER_5USEC_VALUE_PP  (125),
+//    .TIMER_5USEC_BITS_PP   (7)
     ) ps2keyb (
     .wb_clk_i (clk),
     .wb_rst_i (rst),
@@ -672,7 +752,7 @@ always @ ( posedge clk )
     .wb_ack_o (gpio_ack_o),
 
     // GPIO inputs/outputs
-    .leds_ ({ledr_,ledg_[7:4]}),
+//    .leds_ ({ledr_,ledg_[7:4]}),
     .sw_   (sw_)
   );
 
@@ -681,7 +761,7 @@ always @ ( posedge clk )
 
     // Wishbone master interface
     .wb_clk_i (clk),
-    .wb_rst_i (rst),
+    .wb_rst_i (rst | ~sdram_initialized),
     .wb_dat_i (dat_i),
     .wb_dat_o (dat_o),
     .wb_adr_o (adr),
@@ -743,14 +823,14 @@ always @ ( posedge clk )
     .s0_ack_i (fl_ack_o),
 
     // Slave 1 interface - vga
-    .s1_dat_i (vga_dat_o),
-    .s1_dat_o (vga_dat_i),
-    .s1_adr_o ({vga_tga_i,vga_adr_i}),
-    .s1_sel_o (vga_sel_i),
-    .s1_we_o  (vga_we_i),
-    .s1_cyc_o (vga_cyc_i),
-    .s1_stb_o (vga_stb_i),
-    .s1_ack_i (vga_ack_o),
+    .s1_dat_i (vga_dat_o_s),
+    .s1_dat_o (vga_dat_i_s),
+    .s1_adr_o ({vga_tga_i_s,vga_adr_i_s}),
+    .s1_sel_o (vga_sel_i_s),
+    .s1_we_o  (vga_we_i_s),
+    .s1_cyc_o (vga_cyc_i_s),
+    .s1_stb_o (vga_stb_i_s),
+    .s1_ack_i (vga_ack_o_s),
 
     // Slave 2 interface - uart
     .s2_dat_i (uart_dat_o),
@@ -823,15 +903,15 @@ always @ ( posedge clk )
     .s8_ack_i (def_cyc_i & def_stb_i)
   );
 
-  hex_display hex16 (
-    .num (pc[19:4]),
-    .en  (1'b1),
+//  hex_display hex16 (
+//    .num (pc[19:4]),
+//    .en  (1'b1),
 
-    .hex0 (hex0_),
-    .hex1 (hex1_),
-    .hex2 (hex2_),
-    .hex3 (hex3_)
-  );
+//    .hex0 (hex0_),
+//    .hex1 (hex1_),
+//    .hex2 (hex2_),
+//    .hex3 (hex3_)
+//  );
 
   // Continuous assignments
   assign rst_lck         = !sw_[0] & lock & !debug_reset;
@@ -839,7 +919,5 @@ always @ ( posedge clk )
 
   assign dat_i = inta ? { 13'b0000_0000_0000_1, iid }
                : sw_dat_o;
-
-  assign ledg_[3:0] = pc[3:0];
 
 endmodule

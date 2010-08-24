@@ -31,6 +31,7 @@ module hpdmc #(
 ) (
     input sys_clk,
     input sys_rst,
+    output sdram_initialized,
     
     /* Control interface */
     input [2:0] csr_a,
@@ -120,16 +121,21 @@ wire [10:0] tim_refi;
 wire [3:0] tim_rfc;
 wire [1:0] tim_wr;
 
-hpdmc_ctlif #(
-    .csr_addr(csr_addr)
-) ctlif (
+//assign sdram_initialized = 1;
+assign csr_do = 16'd0;
+
+//hpdmc_ctlif #(
+//    .csr_addr(csr_addr)
+//) ctlif (
+hpdmc_setup setup (
     .sys_clk(sys_clk),
     .sys_rst(sys_rst),
-    
-    .csr_a(csr_a),
-    .csr_we(csr_we),
-    .csr_di(csr_di),
-    .csr_do(csr_do),
+    .sdram_initialized ( sdram_initialized ),
+
+//    .csr_a(csr_a),
+//    .csr_we(csr_we),
+//    .csr_di(csr_di),
+//    .csr_do(csr_do),
     
     .bypass(bypass),
     .sdram_rst(sdram_rst),
