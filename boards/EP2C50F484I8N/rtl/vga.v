@@ -17,49 +17,44 @@
  *  <http://www.gnu.org/licenses/>.
  */
 
-module vga #(
-    parameter fml_depth      = 25 )
-    (
+module vga #( parameter fml_depth      = 25 )
+  (
     // Wishbone signals
-    input         wb_clk_i,     // 25 Mhz VDU clock
-    input         wb_rst_i,
-    input  [15:0] wb_dat_i,
-    output [15:0] wb_dat_o,
-    input  [16:1] wb_adr_i,
-    input         wb_we_i,
-    input         wb_tga_i,
-    input  [ 1:0] wb_sel_i,
-    input         wb_stb_i,
-    input         wb_cyc_i,
-    output        wb_ack_o,
+    input                       wb_clk_i,     // 100 Mhz VDU clock
+    input                       wb_rst_i,
+    input               [15: 0] wb_dat_i,
+    output              [15: 0] wb_dat_o,
+    input               [16: 1] wb_adr_i,
+    input                       wb_we_i,
+    input                       wb_tga_i,
+    input               [ 1: 0] wb_sel_i,
+    input                       wb_stb_i,
+    input                       wb_cyc_i,
+    output                      wb_ack_o,
 
     // VGA pad signals
-    output [ 3:0] vga_red_o,
-    output [ 3:0] vga_green_o,
-    output [ 3:0] vga_blue_o,
-    output        horiz_sync,
-    output        vert_sync,
+    output              [ 3: 0] vga_red_o,
+    output              [ 3: 0] vga_green_o,
+    output              [ 3: 0] vga_blue_o,
+    output                      horiz_sync,
+    output                      vert_sync,
 
-    output   [fml_depth-1:0] fml_adr,
-    output reg                  fml_stb,
+    output wire [fml_depth-1:0] fml_adr,
+    output wire                 fml_stb,
     input                       fml_ack,
-    input                [15:0] fml_di,
+    input               [15: 0] fml_di,
 
     /* Direct Cache Bus */
     output                      dcb_stb,
     output      [fml_depth-1:0] dcb_adr,
-    input                [15:0] dcb_dat,
+    input               [15: 0] dcb_dat,
     input                       dcb_hit
   );
 
 assign vert_sync = ~graphics_alpha ^ w_vert_sync;
 
-assign fml_adr = { 'b1011_1000_0000_0000_0000 + { csr_adr_i , 1'b0 } };
 assign dcb_adr = { 'b1011_1000_0000_0000_0000 + { csr_adr_i , 1'b0 } };
 
-always @ ( posedge wb_clk_i )
-//  fml_stb <= ( fml_stb ) ? ~fml_ack : csr_stb_o;
-  fml_stb <= ( fml_ack | ~FmlAccessEnabled ) ? 0 : ( fml_stb ) ? fml_stb : csr_stb_o;
 
 //assign fml_stb = csr_stb_o;
 assign dcb_stb = 1'b0;//csr_stb_o;
@@ -68,31 +63,7 @@ reg [15:0] vga_data;
 always @ ( posedge fml_ack )
   vga_data <= fml_di; //16'haa55;//
   
-// Clock Enable to reduce from 100MHz to 25MHz
-reg [1:0] rClockEnCnt;
-always @ ( posedge wb_clk_i )
-    rClockEnCnt <= rClockEnCnt + 2'd1;
-    
-reg ClockEnable25Mhz;
-always @ ( posedge wb_clk_i )
-    ClockEnable25Mhz <= !rClockEnCnt;
-
-// do not access the sdram after a reset for the first ~670 mSec right after reset
-// 
-reg [23:0] rFmlAccessDelayCnt = 24'hFFFFFF;
-always @ ( posedge wb_clk_i )
-  if ( wb_rst_i )
-    rFmlAccessDelayCnt <= 24'hFFFFFF;
-  else
-    rFmlAccessDelayCnt <= ( ClockEnable25Mhz & ~FmlAccessEnabled ) ? rFmlAccessDelayCnt + 24'd1 : rFmlAccessDelayCnt;
-
-reg FmlAccessEnabled = 1'b0;
-always @ ( posedge wb_clk_i )
-  if ( wb_rst_i )
-    FmlAccessEnabled <= 1'b0;
-  else
-    FmlAccessEnabled <= ( !rFmlAccessDelayCnt ) ? 1'b1 : FmlAccessEnabled;
-    
+   
   // Registers and nets
   //
   // csr address
@@ -239,15 +210,17 @@ always @ ( posedge wb_clk_i )
     .v_retrace  (v_retrace),
     .vh_retrace (vh_retrace)
   );
+
 wire w_vert_sync;
-  lcd lcd0 (
+  lcd #( .fml_depth ( 25 )
+)lcd (
     .clk (wb_clk_i),
     .rst (wb_rst_i),
 
-    .ClockEnable25Mhz ( ClockEnable25Mhz ),
-    
     .shift_reg1     (shift_reg1),
     .graphics_alpha (graphics_alpha),
+
+    .start_addr (start_addr),
 
     .pal_addr  (pal_addr),
     .pal_we    (pal_we),
@@ -290,7 +263,12 @@ wire w_vert_sync;
     .x_dotclockdiv2 (x_dotclockdiv2),
 
     .v_retrace  (v_retrace),
-    .vh_retrace (vh_retrace)
+    .vh_retrace (vh_retrace),
+
+    .fml_adr    ( fml_adr ),
+    .fml_stb    ( fml_stb ),
+    .fml_ack    ( fml_ack ),
+    .fml_di     ( fml_di  )
   );
 
   cpu_mem_iface cpu_mem_iface0 (

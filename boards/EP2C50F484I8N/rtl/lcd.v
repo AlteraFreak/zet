@@ -17,14 +17,15 @@
  *  <http://www.gnu.org/licenses/>.
  */
 
-module lcd (
+module lcd #( parameter fml_depth      = 25 )
+  (
     input clk,              // 25 Mhz clock
     input rst,
 
-    input ClockEnable25Mhz,
-    
     input shift_reg1,       // if set: 320x200
     input graphics_alpha,   // if not set: 640x400 text mode
+
+    input [15:0] start_addr,
 
     // CSR slave interface for reading
     output [17:1] csr_adr_o,
@@ -72,7 +73,13 @@ module lcd (
 
     // retrace signals
     output v_retrace,
-    output vh_retrace
+    output vh_retrace,
+
+    output      [fml_depth-1:0] fml_adr,
+    output wire                 fml_stb,
+    input                       fml_ack,
+    input               [15: 0] fml_di
+    
   );
 
   // Registers and nets
@@ -121,17 +128,32 @@ module lcd (
   wire [7:0] green;
   wire [7:0] blue;
 
+//assign fml_adr = { 'b1011_1000_0000_0000_0000 + { csr_adr_i , 1'b0 } };
+
+wire      [fml_depth-1:0]   fml_adr_tm;
+wire      [fml_depth-1:0]   fml_adr_gm;
+wire      [fml_depth-1:0]   fml_adr_wm;
+assign fml_adr = graphics_alpha ?
+    (shift_reg1 ? fml_adr_gm : fml_adr_wm) : { 1'b0, fml_adr_tm };
+    
+wire                        fml_stb_tm;
+wire                        fml_stb_gm;
+wire                        fml_stb_wm;
+assign fml_stb = graphics_alpha ? (shift_reg1 ? fml_stb_gm : fml_stb_wm) : fml_stb_tm;
+
   // Module instances
-  text_mode tm (
+  text_mode #( .fml_depth ( 25 )
+) tm (
     .clk (clk),
     .rst (rst),
 
-    .ClockEnable25Mhz ( ClockEnable25Mhz ),
+    .h_subpixel ( h_subpixel ),
+    .start_addr (start_addr),
     
     // CSR slave interface for reading
-    .csr_adr_o (csr_tm_adr_o),
-    .csr_dat_i (csr_dat_i),
-    .csr_stb_o (csr_tm_stb_o),
+//    .csr_adr_o (csr_tm_adr_o),
+//    .csr_dat_i (csr_dat_i),
+//    .csr_stb_o (csr_tm_stb_o),
 
     .h_count      (h_count),
     .v_count      (v_count),
@@ -145,7 +167,12 @@ module lcd (
     .hcursor    (hcursor),
 
     .attr         (attr_tm),
-    .horiz_sync_o (horiz_sync_tm)
+    .horiz_sync_o (horiz_sync_tm),
+
+    .fml_adr    ( fml_adr_tm ),
+    .fml_stb    ( fml_stb_tm ),
+    .fml_ack    ( fml_ack    ),
+    .fml_di     ( fml_di     )
   );
 
   planar wm (
@@ -170,9 +197,13 @@ module lcd (
     .horiz_sync_o (horiz_sync_wm)
   );
 
-  linear gm (
+  linear #( .fml_depth ( 25 )
+) gm (
     .clk (clk),
     .rst (rst),
+
+    .h_subpixel       ( h_subpixel ),
+    .start_addr (start_addr),
 
     // CSR slave interface for reading
     .csr_adr_o (csr_gm_adr_o),
@@ -186,7 +217,12 @@ module lcd (
     .video_on_h_o (video_on_h_gm),
 
     .color        (color),
-    .horiz_sync_o (horiz_sync_gm)
+    .horiz_sync_o (horiz_sync_gm),
+
+    .fml_adr    ( fml_adr_gm ),
+    .fml_stb    ( fml_stb_gm ),
+    .fml_ack    ( fml_ack    ),
+    .fml_di     ( fml_di     )
   );
 
   palette_regs pr (
@@ -249,6 +285,18 @@ module lcd (
     index_gm <= rst ? 8'h0 : ( ClockEnable25Mhz ) ? color : index_gm;
 
   // Sync generation & timing process
+  
+// Clock Enable to reduce from 100MHz to 25MHz
+reg [1:0] h_subpixel;
+always @ ( posedge clk )
+    if (rst)
+        h_subpixel <= 2'd0;
+    else
+      h_subpixel <= h_subpixel + 2'd1;
+      
+wire ClockEnable25Mhz;
+assign ClockEnable25Mhz = !h_subpixel;
+
   // Generate horizontal and vertical timing signals for video signal
   always @(posedge clk)
     if (rst)
@@ -260,7 +308,7 @@ module lcd (
         video_on_h_i <= 1'b1;
         video_on_v   <= 1'b1;
       end
-    else if ( ClockEnable25Mhz )
+    else if ( h_subpixel[1] & h_subpixel[0] )
       begin
         h_count      <= (h_count==hor_scan_end) ? 10'b0 : h_count + 10'b1;
         horiz_sync_i <= horiz_sync_i ? (h_count[9:3]!=st_hor_retr)
@@ -282,7 +330,7 @@ module lcd (
       begin
         { horiz_sync, horiz_sync_p } <= 3'b0;
       end
-    else if ( ClockEnable25Mhz )
+    else //if ( ClockEnable25Mhz )
       begin
         { horiz_sync, horiz_sync_p } <= { horiz_sync_p[1:0], graphics_alpha ? (shift_reg1 ? horiz_sync_gm : horiz_sync_wm) : horiz_sync_tm };
       end
@@ -293,7 +341,7 @@ module lcd (
       begin
         video_on_h_p <= 2'b0;
       end
-    else if ( ClockEnable25Mhz ) 
+    else //if ( ClockEnable25Mhz ) 
       begin 
         video_on_h_p <= { video_on_h_p[0], graphics_alpha ? (shift_reg1 ? video_on_h_gm : video_on_h_wm) : video_on_h_tm };
       end

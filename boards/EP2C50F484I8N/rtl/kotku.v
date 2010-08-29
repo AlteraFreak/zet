@@ -19,14 +19,6 @@
 
 module kotku (
     input        clk_50_,           //
-//    output [9:0] ledr_,
-//    output [7:0] ledg_,
-//    input  [9:0] sw_,
-//    input  [3:0] key_,
-//    output [6:0] hex0_,
-//    output [6:0] hex1_,
-//    output [6:0] hex2_,
-//    output [6:0] hex3_,
 
     // flash signals
     output [22:1] flash_addr_,      //
@@ -34,7 +26,6 @@ module kotku (
     output        flash_we_n_,      //
     output        flash_oe_n_,      //
     output        flash_ce_n_,      //
-//    output        flash_rst_n_,
 
     output          FLASH_nWP,
     input           FLASH_STATUS,
@@ -151,7 +142,7 @@ assign sw_ = 10'd0;
   wire        vga_ack_o_s;
 
   // wires to uart controller
-  wire [15:0] uart_dat_o;
+  wire [7:0] uart_dat_o;
   wire [15:0] uart_dat_i;
   wire        uart_tga_i;
   wire [19:1] uart_adr_i;
@@ -421,16 +412,7 @@ always @ ( posedge clk )
     .wb_we_i  (fmlbrg_we),
     .wb_ack_o (fmlbrg_ack),
 
-//    // FML master interface
-//    .fml_adr (fml_adr),
-//    .fml_stb (fml_stb),
-//    .fml_we  (fml_we),
-//    .fml_ack (fml_ack),
-//    .fml_sel (fml_sel),
-//    .fml_do  (fml_do),
-//    .fml_di  (fml_di)
-
-    // FML master interface
+    // FML master interface via FMLARB
     .fml_adr (fml_zet_adr),
     .fml_stb (fml_zet_stb),
     .fml_we  (fml_zet_we),
@@ -445,23 +427,6 @@ always @ ( posedge clk )
 //    .dcb_hit ( dcb_vga_hit )
   );
 
-reg [7:0] fml_zet_ack_piped = 8'd0;
-always @ ( posedge sdram_clk )
-    if ( rst )
-        fml_zet_ack_piped <= 8'd0;
-    else
-        fml_zet_ack_piped <= { fml_zet_ack_piped[6:0] , fml_zet_ack };
-
-reg fml_dummyport0_stb = 1'b0;
-always @ ( posedge sdram_clk )
-    if ( rst )
-        fml_dummyport0_stb <= 1'b0;
-    else if ( fml_dummyport0_stb )
-       fml_dummyport0_stb <= ~fml_vga_ack;
-    else
-       fml_dummyport0_stb <= fml_zet_stb;
-//       fml_dummyport0_stb <= fml_zet_ack_piped[3] ;
-
 fmlarb #(
     .fml_depth ( 25 )
 ) fmlarb (
@@ -470,8 +435,7 @@ fmlarb #(
 
     /* Interface 0 has higher priority than the others */
     .m0_adr   ( fml_vga_adr ), // input [fml_depth-1:0]
-    .m0_stb   ( fml_dummyport0_stb ),//1'b0 ),//fml_vga_stb ), // input
-//    .m0_stb   ( 1'b0 ),//fml_vga_stb ), // input
+    .m0_stb   ( fml_vga_stb ), // input
     .m0_we    ( 1'b0 ),        // vga never writes
     .m0_ack   ( fml_vga_ack ), // output
     .m0_sel   ( 2'b11       ), // input [1:0]
@@ -593,7 +557,8 @@ wb_abrg vga_brg (
     .wbs_ack_o (vga_ack_o_s),
 
     // Wishbone master interface
-    .wbm_clk_i (vga_clk),
+//    .wbm_clk_i (vga_clk),     //  25MHz VGA clock
+    .wbm_clk_i (sdram_clk),     // 100MHz SDRam clock
     .wbm_adr_o (vga_adr_i),
     .wbm_dat_o (vga_dat_i),
     .wbm_dat_i (vga_dat_o),
@@ -605,10 +570,12 @@ wb_abrg vga_brg (
     .wbm_ack_i (vga_ack_o)
   );
 
-vga vga (
+vga #( .fml_depth ( 25 )
+) vga (
     // Wishbone slave interface
     .wb_rst_i (rst | ~sdram_initialized),
-    .wb_clk_i (vga_clk),   // 25MHz VGA clock
+//    .wb_clk_i (vga_clk),   //  25MHz VGA clock
+    .wb_clk_i (sdram_clk),   // 100MHz SDRam clock
     .wb_dat_i (vga_dat_i),
     .wb_dat_o (vga_dat_o),
     .wb_adr_i (vga_adr_i[16:1]),    // 128K
@@ -624,7 +591,18 @@ vga vga (
     .vga_green_o (tft_lcd_g_),
     .vga_blue_o  (tft_lcd_b_),
     .horiz_sync  (tft_lcd_hsync_),
-    .vert_sync   (tft_lcd_vsync_)
+    .vert_sync   (tft_lcd_vsync_),
+
+    .fml_adr   ( fml_vga_adr ), // output [fml_depth-1:0]
+    .fml_stb   ( fml_vga_stb ), // output
+    .fml_ack   ( fml_vga_ack ), // input
+    .fml_di    ( fml_vga_do  ), // input [15:0]
+
+    .dcb_stb ( dcb_vga_stb ),
+    .dcb_adr ( dcb_vga_adr ),
+    .dcb_dat ( dcb_vga_dat ),
+    .dcb_hit ( dcb_vga_hit )
+    
   );
 
   uart_top com1 (
@@ -833,7 +811,7 @@ vga vga (
     .s1_ack_i (vga_ack_o_s),
 
     // Slave 2 interface - uart
-    .s2_dat_i (uart_dat_o),
+    .s2_dat_i ({8'd0,uart_dat_o}),
     .s2_dat_o (uart_dat_i),
     .s2_adr_o ({uart_tga_i,uart_adr_i}),
     .s2_sel_o (uart_sel_i),
@@ -903,18 +881,8 @@ vga vga (
     .s8_ack_i (def_cyc_i & def_stb_i)
   );
 
-//  hex_display hex16 (
-//    .num (pc[19:4]),
-//    .en  (1'b1),
-
-//    .hex0 (hex0_),
-//    .hex1 (hex1_),
-//    .hex2 (hex2_),
-//    .hex3 (hex3_)
-//  );
-
   // Continuous assignments
-  assign rst_lck         = !sw_[0] & lock & !debug_reset;
+  assign rst_lck         = !sw_[0] & lock;// & !debug_reset;
   assign sdram_clk_      = sdram_clk;
 
   assign dat_i = inta ? { 13'b0000_0000_0000_1, iid }
