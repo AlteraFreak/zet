@@ -1,5 +1,10 @@
 /*
- *  Copyright (c) 2008  Zeus Gomez Marmolejo <zeus@opencores.org>
+ *  Phase accumulator clock generator:
+ *   Output Frequency Fo = Fc * N / 2^bits
+ *   Output Jitter = 1/Fc
+ *
+ *  Copyright (c) 2009  Zeus Gomez Marmolejo <zeus@opencores.org>
+ *  adapted from the opencores keyboard controller from John Clayton
  *
  *  This file is part of the Zet processor. This processor is free
  *  hardware; you can redistribute it and/or modify it under the terms of
@@ -16,13 +21,24 @@
  *  <http://www.gnu.org/licenses/>.
  */
 
-`include "rom_def.v"
+module clk_gen #(
+    parameter res,    // bits - bit resolution
+    parameter phase   // N - phase value for the counter
+  )
+  (
+    input      clk_i, // Fc - input frequency
+    input      rst_i,
+    output     clk_o  // Fo - output frequency
+  );
 
-`define IR_SIZE 36
-`define MEM_OP  31
-`define ADD_IP `IR_SIZE'bx__0__1__0__1__10_001_001__0__01__0__0_1111_xxxx_xxxx_1111_xx
-`define OP_NOP 8'h90
-`define OP_HLT 8'hF4
+  // Registers and nets
+  reg [res-1:0] cnt;
 
-//`define DEBUG         1
-//`define DEBUG_TRACE   1
+  // Continuous assignments
+  assign clk_o = cnt[res-1];
+
+  // Behaviour
+  always @(posedge clk_i)
+    cnt <= rst_i ? 0 : (cnt + phase);
+
+endmodule
