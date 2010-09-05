@@ -175,7 +175,7 @@ assign sw_ = 10'd0;
   wire        timer_ack_o;
 
   // wires to sd controller
-  wire [15:0] sd_dat_o;
+  wire [ 7:0] sd_dat_o;
   wire [15:0] sd_dat_i;
   wire [ 1:0] sd_sel_i;
   wire        sd_we_i;
@@ -739,7 +739,7 @@ vga #( .fml_depth ( 25 )
     // Wishbone master interface
     .wbm_clk_i (sdram_clk),
     .wbm_dat_o (sd_dat_i),
-    .wbm_dat_i (sd_dat_o),
+    .wbm_dat_i ({8'd0,sd_dat_o}),
     .wbm_sel_o (sd_sel_i),
     .wbm_stb_o (sd_stb_i),
     .wbm_cyc_o (sd_cyc_i),
